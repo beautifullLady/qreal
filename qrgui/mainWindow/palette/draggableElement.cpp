@@ -35,11 +35,14 @@
 #include "mouseGestures/gesturePainter.h"
 #include "editor/editorView.h"
 #include "editor/editorViewScene.h"
+#include "models/commands/removeElementsCommand.h"
+#include "models/commands/renameExplosionCommand.h"
 
 #include <plugins/pluginManager/toolPluginManager.h>
 
 using namespace qReal;
 using namespace gui;
+using namespace qReal::commands;
 
 const int gestureTipSize = 30;
 
@@ -199,6 +202,32 @@ void DraggableElement::deleteElement()
 	mMainWindow.loadEditorPlugins();
 }
 
+void DraggableElement::deleteElementFromModel()
+{
+ 	QAction *action = static_cast<QAction *>(sender());
+ 	mDeletedElementId = action->data().value<Id>();
+ 
+ 	RemoveElementsCommand *command = new RemoveElementsCommand(mMainWindow.models());
+ 	RemoveElementsCommand *removeCommand = command->withLogicalItemToDelete(explosionTarget());
+ 	mMainWindow.controller()->executeGlobal(removeCommand);
+ 
+ 	mMainWindow.clearSelectionOnTabs();
+ 	mEditorManagerProxy.deleteElement(mDeletedElementId);
+ 	mMainWindow.models().logicalModelAssistApi().removeElement(explosionTarget());
+ 
+ 	mMainWindow.loadEditorPlugins();
+}
+ 
+void DraggableElement::renameElement()
+{
+ 	RenameExplosionCommand *command = new RenameExplosionCommand(
+ 		mMainWindow.models().logicalModelAssistApi()
+ 		, &mMainWindow.models().graphicalModelAssistApi()
+ 		, mMainWindow.models().exploser()
+ 		, explosionTarget());
+ 	mMainWindow.controller()->executeGlobal(command);
+}
+
 void DraggableElement::checkElementForRootDiagramNode()
 {
 	if (mEditorManagerProxy.isDiagramNode(mDeletedElementId)) {
@@ -345,7 +374,22 @@ void DraggableElement::mousePressEvent(QMouseEvent *event)
 			}
 
 			menu->exec(QCursor::pos());
-		} else if (!mData.explosionTarget().isNull()) {
+		} else if (!mEditorManagerProxy.isInterpretationMode() && !mData.explosionTarget().isNull()) {
+ 			QMenu *menu = new QMenu(this);
+			QAction * const deleteElementPaletteAction = menu->addAction(tr("Delete Element"));
+ 			connect(deleteElementPaletteAction, &QAction::triggered
+ 					, this, &DraggableElement::deleteElementFromModel
+ 					, Qt::QueuedConnection);
+ 			deleteElementPaletteAction->setData(elementId.toVariant());
+			
+ 			QAction * const renameElementPaletteAction = menu->addAction(tr("Rename Element"));
+ 			connect(renameElementPaletteAction, &QAction::triggered
+ 					, this, &DraggableElement::renameElement
+ 					, Qt::QueuedConnection);
+ 			renameElementPaletteAction->setData(elementId.toVariant());
+ 
+ 			menu->exec(QCursor::pos());
+  		} else if (!mData.explosionTarget().isNull()) {
 			QMenu * const menu = new QMenu();
 			if (mMainWindow.toolManager().customizer()->allowSubprogramPropertiesChanging()) {
 				QAction * const changePropertiesAction = menu->addAction(tr("Change Properties"));
